@@ -134,6 +134,8 @@ fn initialize_debug_log(args: &Args, config: &Config) -> anyhow::Result<()> {
         tracing_subscriber::fmt()
             .with_ansi(false)
             .with_timer(ChronoLocal::rfc_3339())
+            .with_file(true)
+            .with_line_number(true)
             .with_max_level(tracing::Level::DEBUG)
             .with_writer(Mutex::new(file))
             .init();

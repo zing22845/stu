@@ -1,7 +1,11 @@
 use std::fmt::Debug;
 
 use aws_config::{default_provider::region, meta::region::RegionProviderChain, BehaviorVersion};
-use aws_sdk_s3::{config::Region, operation::list_objects_v2::ListObjectsV2Output};
+use aws_sdk_s3::{
+    config::Region,
+    operation::list_objects_v2::ListObjectsV2Output,
+    error::SdkError,
+};
 use chrono::TimeZone;
 
 use crate::{
@@ -126,38 +130,11 @@ impl Client {
         Ok(buckets_in_region)
     }
 
-    async fn get_bucket_region(&self, bucket_name: &str) -> Result<String> {
-        if let Some(bucket_region) = self.bucket_region_cache.get(bucket_name) {
-            return Ok(bucket_region);
+    pub async fn get_bucket_region(&self, bucket: &str) -> Result<String> {
+        match self.fetch_bucket_location(bucket).await {
+            Ok(region) => Ok(region),
+            Err(e) => Err(e)
         }
-
-        let result = self
-            .client
-            .get_bucket_location()
-            .bucket(bucket_name)
-            .send()
-            .await;
-        let output = result.map_err(|e| {
-            AppError::new(format!("Failed to fetch region for '{}'", bucket_name), e)
-        })?;
-
-        let bucket_region = output
-            .location_constraint()
-            .map(|loc| {
-                if loc.as_str().is_empty() {
-                    // location_constraint() returns Some<Unknown<UnknownVariantValue("")>> for "us-east-1" region, not None
-                    "us-east-1".to_string()
-                } else {
-                    loc.as_str().to_string()
-                }
-            })
-            .unwrap();
-
-        self.bucket_region_cache
-            .put(bucket_name.to_string(), bucket_region.to_string())
-            .unwrap();
-
-        Ok(bucket_region.to_string())
     }
 
     pub async fn load_bucket(&self, name: &str) -> Result<BucketItem> {
@@ -189,7 +166,9 @@ impl Client {
         let mut files_vec: Vec<Vec<ObjectItem>> = Vec::new();
 
         let mut token: Option<String> = None;
-        loop {
+        let mut is_truncated = true;
+
+        while is_truncated {
             let result = self
                 .client
                 .list_objects_v2()
@@ -199,18 +178,17 @@ impl Client {
                 .set_continuation_token(token)
                 .send()
                 .await;
+            
             let output = result.map_err(|e| AppError::new("Failed to load objects", e))?;
 
             let dirs = objects_output_to_dirs(&self.region, bucket, &output);
-            dirs_vec.push(dirs);
-
             let files = objects_output_to_files(&self.region, bucket, &output);
+
+            dirs_vec.push(dirs);
             files_vec.push(files);
 
+            is_truncated = output.is_truncated().unwrap_or(false);
             token = output.next_continuation_token().map(String::from);
-            if token.is_none() {
-                break;
-            }
         }
 
         let di = dirs_vec.into_iter().flatten();
@@ -351,6 +329,52 @@ impl Client {
             bucket, self.region, prefix
         );
         open::that(path).map_err(AppError::error)
+    }
+
+    pub async fn fetch_bucket_location(&self, bucket: &str) -> Result<String> {
+        if let Some(region) = self.bucket_region_cache.get(bucket) {
+            return Ok(region);
+        }
+
+        let result = self.client.get_bucket_location()
+            .bucket(bucket)
+            .send()
+            .await;
+        
+        match result {
+            Ok(response) => {
+                let location = response.location_constraint().unwrap().to_string();
+                tracing::debug!("Found region from response: {}", location);
+                self.bucket_region_cache.set(bucket, &location);
+                Ok(location)
+            }
+            Err(e) => {
+                if let SdkError::ServiceError(service_err) = &e {
+                    let raw = service_err.raw();
+                    if let Some(bytes) = raw.body().bytes() {
+                        if let Ok(body_str) = String::from_utf8(bytes.to_vec()) {
+                            // use roxmltree to parse XML
+                            let doc = roxmltree::Document::parse(&body_str)
+                                .map_err(|e| AppError::new("Failed to parse XML", e))?;
+                            
+                            // find the innermost LocationConstraint node
+                            if let Some(region) = doc
+                                .descendants()
+                                .filter(|n| n.has_tag_name("LocationConstraint"))
+                                .filter_map(|n| n.text())
+                                .next() 
+                            {
+                                let region = region.trim().to_string();
+                                tracing::debug!("Found region from XML: {}", region);
+                                self.bucket_region_cache.set(bucket, &region);
+                                return Ok(region);
+                            }
+                        }
+                    }
+                }
+                Err(AppError::new("Failed to get bucket location", e))
+            }
+        }
     }
 }
 

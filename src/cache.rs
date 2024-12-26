@@ -35,6 +35,7 @@ impl SimpleStringCache {
         cache
     }
 
+    #[allow(dead_code)]
     pub fn put(&self, key: String, value: String) -> io::Result<()> {
         {
             let mut cache = self.cache.write().unwrap();
@@ -61,12 +62,17 @@ impl SimpleStringCache {
 
         let mut cache = self.cache.write().unwrap();
         cache.clear();
+        
         for line in contents.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            
             let parts: Vec<&str> = line.split(',').collect();
             if parts.len() == 2 {
                 cache.insert(parts[0].to_string(), parts[1].to_string());
             } else {
-                panic!("Cache file has invalid format on line: {}", line);
+                tracing::warn!("Invalid cache file line: {}", line);
             }
         }
 
@@ -88,5 +94,10 @@ impl SimpleStringCache {
 
         std::fs::rename(temp_file_path, &self.file_path)?;
         Ok(())
+    }
+
+    pub fn set(&self, key: &str, value: &str) {
+        let mut cache = self.cache.write().unwrap();
+        cache.insert(key.to_string(), value.to_string());
     }
 }
