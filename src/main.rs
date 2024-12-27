@@ -48,7 +48,7 @@ impl From<PathStyle> for client::AddressingStyle {
 }
 
 /// STU - S3 Terminal UI
-#[derive(Parser)]
+#[derive(Parser, Debug)]
 #[command(version)]
 struct Args {
     /// AWS region
@@ -67,6 +67,10 @@ struct Args {
     #[arg(short, long, value_name = "NAME")]
     bucket: Option<String>,
 
+    /// Target prefix
+    #[arg(short = 'x', long, value_name = "PREFIX")]
+    prefix: Option<String>,
+
     /// Path style type for object paths
     #[arg(long, value_name = "TYPE", default_value = "auto")]
     path_style: PathStyle,
@@ -74,6 +78,12 @@ struct Args {
     /// Enable debug logs
     #[arg(long)]
     debug: bool,
+}
+
+fn process_prefix(prefix: Option<String>) -> Option<String> {
+    prefix.clone()
+        .map(|p| p.trim_end_matches('/')
+            .to_string())
 }
 
 #[tokio::main]
@@ -106,6 +116,7 @@ async fn run<B: Backend>(
     let mut app = App::new(ctx, tx.clone(), width, height);
 
     spawn(async move {
+        let region = args.region.clone();
         let client = Client::new(
             args.region,
             args.endpoint_url,
@@ -114,7 +125,9 @@ async fn run<B: Backend>(
             args.path_style.into(),
         )
         .await;
-        tx.send(AppEventType::Initialize(client, args.bucket));
+        let bucket = args.bucket.clone();
+        let prefix = process_prefix(args.prefix);
+        tx.send(AppEventType::Initialize(client, bucket, prefix, region));
     });
 
     run::run(&mut app, terminal, rx).await?;

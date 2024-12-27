@@ -2,9 +2,7 @@ use std::fmt::Debug;
 
 use aws_config::{default_provider::region, meta::region::RegionProviderChain, BehaviorVersion};
 use aws_sdk_s3::{
-    config::Region,
-    operation::list_objects_v2::ListObjectsV2Output,
-    error::SdkError,
+    config::Region, error::SdkError, operation::list_objects_v2::ListObjectsV2Output,
 };
 use chrono::TimeZone;
 
@@ -109,6 +107,7 @@ impl Client {
                     s3_uri,
                     arn,
                     object_url,
+                    prefix: None,
                 }
             })
             .collect();
@@ -133,20 +132,28 @@ impl Client {
     pub async fn get_bucket_region(&self, bucket: &str) -> Result<String> {
         match self.fetch_bucket_location(bucket).await {
             Ok(region) => Ok(region),
-            Err(e) => Err(e)
+            Err(e) => Err(e),
         }
     }
 
-    pub async fn load_bucket(&self, name: &str) -> Result<BucketItem> {
-        let region = self.get_bucket_region(name).await?;
-        self.bucket_region_cache.write_cache().unwrap();
-
-        if region != self.region {
-            return Err(AppError::msg(format!(
-                "Bucket '{}' is in region '{}', expected '{}'",
-                name, region, self.region
-            )));
+    pub async fn load_bucket(
+        &self,
+        name: &str,
+        prefix: Option<String>,
+        region: Option<String>,
+    ) -> Result<BucketItem> {
+        if let Some(region) = region {
+            self.bucket_region_cache.set(name, &region);
+        } else {
+            let region = self.get_bucket_region(name).await?;
+            if region != self.region {
+                return Err(AppError::msg(format!(
+                    "Bucket '{}' is in region '{}', expected '{}'",
+                    name, region, self.region
+                )));
+            }
         }
+        self.bucket_region_cache.write_cache().unwrap();
 
         let s3_uri = build_bucket_s3_uri(name);
         let arn = build_bucket_arn(name);
@@ -157,6 +164,7 @@ impl Client {
             s3_uri,
             arn,
             object_url,
+            prefix,
         };
         Ok(bucket)
     }
@@ -178,7 +186,7 @@ impl Client {
                 .set_continuation_token(token)
                 .send()
                 .await;
-            
+
             let output = result.map_err(|e| AppError::new("Failed to load objects", e))?;
 
             let dirs = objects_output_to_dirs(&self.region, bucket, &output);
@@ -336,11 +344,13 @@ impl Client {
             return Ok(region);
         }
 
-        let result = self.client.get_bucket_location()
+        let result = self
+            .client
+            .get_bucket_location()
             .bucket(bucket)
             .send()
             .await;
-        
+
         match result {
             Ok(response) => {
                 let location = response.location_constraint().unwrap().to_string();
@@ -356,13 +366,13 @@ impl Client {
                             // use roxmltree to parse XML
                             let doc = roxmltree::Document::parse(&body_str)
                                 .map_err(|e| AppError::new("Failed to parse XML", e))?;
-                            
+
                             // find the innermost LocationConstraint node
                             if let Some(region) = doc
                                 .descendants()
                                 .filter(|n| n.has_tag_name("LocationConstraint"))
                                 .filter_map(|n| n.text())
-                                .next() 
+                                .next()
                             {
                                 let region = region.trim().to_string();
                                 tracing::debug!("Found region from XML: {}", region);

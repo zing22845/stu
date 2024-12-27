@@ -75,13 +75,13 @@ impl App {
         self.height = height;
     }
 
-    pub fn initialize(&mut self, client: Client, bucket: Option<String>) {
+    pub fn initialize(&mut self, client: Client, bucket: Option<String>, prefix: Option<String>, region: Option<String>) {
         self.client = Some(Arc::new(client));
 
         let (client, tx) = self.unwrap_client_tx();
         spawn(async move {
             let buckets = match bucket {
-                Some(name) => client.load_bucket(&name).await.map(|b| vec![b]),
+                Some(name) => client.load_bucket(&name, prefix, region).await.map(|b| vec![b]),
                 None => client.load_all_buckets().await,
             };
             let result = CompleteInitializeResult::new(buckets);
@@ -107,7 +107,9 @@ impl App {
             }
         }
 
-        let bucket_items_len = self.app_objects.get_bucket_items().len();
+        let bucket_items = self.app_objects.get_bucket_items();
+
+        let bucket_items_len = bucket_items.len();
 
         if bucket_items_len == 1 {
             // bucket name is specified, or if there is only one bucket, open it.

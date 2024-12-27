@@ -11,6 +11,7 @@ pub struct BucketItem {
     pub s3_uri: String,
     pub arn: String,
     pub object_url: String,
+    pub prefix: Option<String>,
 }
 
 #[derive(Clone, Debug)]

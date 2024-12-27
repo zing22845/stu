@@ -17,7 +17,7 @@ use crate::{
 pub enum AppEventType {
     Key(KeyEvent),
     Resize(usize, usize),
-    Initialize(Client, Option<String>),
+    Initialize(Client, Option<String>, Option<String>, Option<String>),
     CompleteInitialize(Result<CompleteInitializeResult>),
     ReloadBuckets,
     CompleteReloadBuckets(Result<CompleteReloadBucketsResult>),

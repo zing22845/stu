@@ -447,9 +447,16 @@ impl BucketListPage {
 
     pub fn current_selected_object_key(&self) -> ObjectKey {
         let item = self.current_selected_item();
-        ObjectKey {
-            bucket_name: item.name.clone(),
-            object_path: Vec::new(),
+        if let Some(prefix) = item.prefix.clone() {
+            ObjectKey {
+                bucket_name: item.name.clone(),
+                object_path: prefix.split('/').map(|s| s.to_string()).collect(),
+            }
+        } else {
+            ObjectKey {
+                bucket_name: item.name.clone(),
+                object_path: Vec::new(),
+            }
         }
     }
 
@@ -702,7 +709,7 @@ mod tests {
             "│ │ Name (Desc)            │ │",
             "│ ╰────────────────────────╯ │",
             "│                            │",
-            "│                            │",
+            "│                            ��",
             "└────────────────────────────┘",
         ]);
         set_cells! { expected =>
@@ -839,6 +846,7 @@ mod tests {
             s3_uri: "".to_string(),
             arn: "".to_string(),
             object_url: "".to_string(),
+            prefix: None,
         }
     }
 }

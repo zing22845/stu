@@ -99,7 +99,14 @@ fn build_header(app: &App) -> Header {
     let breadcrumb: Vec<String> = target_pages
         .iter()
         .map(|page| match page {
-            Page::BucketList(page) => page.current_selected_item().name.clone(),
+            Page::BucketList(page) => {
+                let item = page.current_selected_item();
+                if let Some(prefix) = item.prefix.clone() {
+                    format!("{} / {}", item.name, prefix)
+                } else {
+                    item.name.clone()
+                }
+            },
             Page::ObjectList(page) => page.current_selected_item().name().into(),
             _ => unreachable!(),
         })
