@@ -75,13 +75,22 @@ impl App {
         self.height = height;
     }
 
-    pub fn initialize(&mut self, client: Client, bucket: Option<String>, prefix: Option<String>, region: Option<String>) {
+    pub fn initialize(
+        &mut self,
+        client: Client,
+        bucket: Option<String>,
+        prefix: Option<String>,
+        region: Option<String>,
+    ) {
         self.client = Some(Arc::new(client));
 
         let (client, tx) = self.unwrap_client_tx();
         spawn(async move {
             let buckets = match bucket {
-                Some(name) => client.load_bucket(&name, prefix, region).await.map(|b| vec![b]),
+                Some(name) => client
+                    .load_bucket(&name, prefix, region)
+                    .await
+                    .map(|b| vec![b]),
                 None => client.load_all_buckets().await,
             };
             let result = CompleteInitializeResult::new(buckets);

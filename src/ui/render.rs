@@ -106,7 +106,7 @@ fn build_header(app: &App) -> Header {
                 } else {
                     item.name.clone()
                 }
-            },
+            }
             Page::ObjectList(page) => page.current_selected_item().name().into(),
             _ => unreachable!(),
         })

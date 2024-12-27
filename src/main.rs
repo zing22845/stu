@@ -81,9 +81,7 @@ struct Args {
 }
 
 fn process_prefix(prefix: Option<String>) -> Option<String> {
-    prefix.clone()
-        .map(|p| p.trim_end_matches('/')
-            .to_string())
+    prefix.clone().map(|p| p.trim_end_matches('/').to_string())
 }
 
 #[tokio::main]

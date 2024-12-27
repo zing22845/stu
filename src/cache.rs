@@ -62,12 +62,12 @@ impl SimpleStringCache {
 
         let mut cache = self.cache.write().unwrap();
         cache.clear();
-        
+
         for line in contents.lines() {
             if line.trim().is_empty() {
                 continue;
             }
-            
+
             let parts: Vec<&str> = line.split(',').collect();
             if parts.len() == 2 {
                 cache.insert(parts[0].to_string(), parts[1].to_string());
